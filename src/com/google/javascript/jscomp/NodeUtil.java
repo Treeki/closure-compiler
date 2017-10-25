@@ -3628,14 +3628,22 @@ public final class NodeUtil {
       startPos = endPos + 1;
       endPos = name.indexOf('.', startPos);
       String part = (endPos == -1 ? name.substring(startPos) : name.substring(startPos, endPos));
-      Node propNode = IR.string(part);
-      propNode.setLength(part.length());
-      if (compiler.getCodingConvention().isConstantKey(part)) {
-        propNode.putBooleanProp(Node.IS_CONSTANT_NAME, true);
+      if (part.startsWith("^")) {
+        Node elemNode = IR.string(part.substring(1));
+        elemNode.setLength(part.length() - 1);
+        int length = node.getLength() + "['']".length() + part.length() - 1;
+        node = IR.getelem(node, elemNode);
+        node.setLength(length);
+      } else {
+        Node propNode = IR.string(part);
+        propNode.setLength(part.length());
+        if (compiler.getCodingConvention().isConstantKey(part)) {
+          propNode.putBooleanProp(Node.IS_CONSTANT_NAME, true);
+        }
+        int length = node.getLength() + ".".length() + part.length();
+        node = IR.getprop(node, propNode);
+        node.setLength(length);
       }
-      int length = node.getLength() + ".".length() + part.length();
-      node = IR.getprop(node, propNode);
-      node.setLength(length);
     } while (endPos != -1);
 
     return node;
@@ -3710,7 +3718,9 @@ public final class NodeUtil {
       if (current.isName() || current.isThis() || current.isSuper()) {
         return current;
       }
-      Preconditions.checkState(current.isGetProp(), "Not a getprop node: ", current);
+      boolean valid = current.isGetProp()
+          || (current.isGetElem() && current.getLastChild().isString());
+      Preconditions.checkState(valid, "Not a getprop node: ", current);
     }
   }
 
@@ -3820,7 +3830,7 @@ public final class NodeUtil {
 
     List<String> parts = Splitter.on('.').splitToList(name);
     for (String part : parts) {
-      if (!isValidPropertyName(mode, part)) {
+      if (!part.startsWith("^") && !isValidPropertyName(mode, part)) {
         return false;
       }
     }

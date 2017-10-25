@@ -1916,13 +1916,37 @@ public class Node implements Serializable {
    */
   @Nullable
   public final String getQualifiedName() {
+    StringBuilder builder;
+
     switch (token) {
       case NAME:
         String name = getString();
         return name.isEmpty() ? null : name;
       case GETPROP:
-        StringBuilder builder = getQualifiedNameForGetProp(0);
+        builder = getQualifiedNameForGetProp(0);
         return builder != null ? builder.toString() : null;
+      case GETELEM:
+        if (first.isQualifiedName() && first.next.isString()) {
+          String elemString = first.next.getString();
+          int reserve = 2 + elemString.length();
+          if (first.isGetProp()) {
+            builder = first.getQualifiedNameForGetProp(reserve);
+          } else {
+            builder = new StringBuilder();
+            String qName = first.getQualifiedName();
+            if (qName == null) {
+              return null;
+            }
+            builder.append(qName);
+          }
+          if (builder != null) {
+            builder.append('.');
+            builder.append('^');
+            builder.append(elemString);
+            return builder.toString();
+          }
+        }
+        return null;
       case THIS:
         return "this";
       case SUPER:
@@ -1989,6 +2013,13 @@ public class Node implements Serializable {
       }
 
       return left + "." + right;
+    } else if (token == Token.GETELEM) {
+      String left = getFirstChild().getOriginalQualifiedName();
+      if (left != null && getLastChild().isString()) {
+        return left + ".^" + getLastChild().getString();
+      } else {
+        return null;
+      }
     } else if (token == Token.THIS) {
       return "this";
     } else if (token == Token.SUPER) {
@@ -2012,6 +2043,8 @@ public class Node implements Serializable {
         return true;
       case GETPROP:
         return getFirstChild().isQualifiedName();
+      case GETELEM:
+        return getFirstChild().isQualifiedName() && getLastChild().isString();
       default:
         return false;
     }
@@ -2047,6 +2080,16 @@ public class Node implements Serializable {
             && prop.length() == endIndex - start
             && prop.regionMatches(0, qname, start, endIndex - start)
             && getFirstChild().matchesQualifiedName(qname, start - 1);
+      case GETELEM:
+        if (!getLastChild().isString()) {
+          return false;
+        }
+        String elem = getLastChild().getString();
+        return start > 1
+            && elem.length() == endIndex - start - 1
+            && qname.charAt(start) == '^'
+            && elem.regionMatches(0, qname, start + 1, endIndex - start - 1)
+            && getFirstChild().matchesQualifiedName(qname, start - 1);
       default:
         return false;
     }
@@ -2069,6 +2112,11 @@ public class Node implements Serializable {
       case GETPROP:
         return getLastChild().getString().equals(n.getLastChild().getString())
             && getFirstChild().matchesQualifiedName(n.getFirstChild());
+      case GETELEM:
+        return getLastChild().isString()
+            && n.getLastChild().isString()
+            && getLastChild().getString().equals(n.getLastChild().getString())
+            && getFirstChild().matchesQualifiedName(n.getFirstChild());
       default:
         return false;
     }
@@ -2085,6 +2133,8 @@ public class Node implements Serializable {
         return !getString().isEmpty();
       case GETPROP:
         return getFirstChild().isUnscopedQualifiedName();
+      case GETELEM:
+        return getFirstChild().isUnscopedQualifiedName() && getLastChild().isString();
       default:
         return false;
     }
